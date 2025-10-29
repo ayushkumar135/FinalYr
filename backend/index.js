@@ -10,7 +10,7 @@ const upload = multer({ dest: "uploads/" });
 app.use(cors());
 app.use(express.json());
 
-const client = new OpenAI({ apiKey: "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" });
+const client = new OpenAI({ apiKey: "" });
 
 // helper: run python script and parse JSON
 function runPython(script, inputObj) {
