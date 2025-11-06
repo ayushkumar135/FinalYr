@@ -8,8 +8,6 @@ import { Client } from "@gradio/client";
 import fs from "fs";
 
 
-const HF_API_URL = "https://ayushkumar3456-finalyr.hf.space/run/click";
-const HF_TOKEN = "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"; // 🔑 Replace with your actual Hugging Face token
 
 
 const app = express();
