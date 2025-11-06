@@ -1,0 +1,11 @@
+# timestamp     elapsed  client_ip       action/status   size   method  URL                               rfc931  hierarchy/from           content_type
+1726235001.123  200      192.168.1.25    TCP_MISS/200    5120   GET     http://example.com/index.html     -       DIRECT/93.184.216.34     text/html
+1726235002.432  150      192.168.1.25    TCP_HIT/200     5120   GET     http://example.com/index.html     -       NONE/-                   text/html
+1726235010.789  400      192.168.1.30    TCP_MISS/404    345    GET     http://example.com/404.html       -       DIRECT/93.184.216.34     text/html
+1726235022.567  350      192.168.1.40    TCP_REFRESH_HIT/200 6200 GET   http://news.com/article1          -       DIRECT/151.101.1.69      text/html
+1726235033.876  180      192.168.1.25    TCP_HIT/200     2048   GET     http://cdn.example.com/logo.png   -       NONE/-                   image/png
+1726235045.112  920      192.168.1.30    TCP_MISS/200    20480  GET     http://videos.com/clip.mp4        -       DIRECT/203.0.113.10      video/mp4
+1726235055.999  130      192.168.1.40    TCP_DENIED/403  403    GET     http://blocked.com                -       NONE/-                   text/html
+1726235077.654  260      192.168.1.25    TCP_MISS/301    520    GET     http://example.com/old            -       DIRECT/93.184.216.34     text/html
+1726235088.321  170      192.168.1.30    TCP_HIT/200     6200   GET     http://news.com/article1          -       NONE/-                   text/html
+1726235099.777  300      192.168.1.40    TCP_MISS/500    800    GET     http://example.com/error          -       DIRECT/93.184.216.34     text/html
