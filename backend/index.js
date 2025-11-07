@@ -10,6 +10,7 @@ import fs from "fs";
 
 
 
+
 const app = express();
 const upload = multer({ dest: "uploads/" });
 app.use(cors());
@@ -310,25 +311,26 @@ User query: ${query}
 const test_ir = {
     action: "aggregate",
     file: "filename.log",
-    match_pattern: "404",
-    match_fields: "all",
-    print_fields: [9, 1],
+    match_pattern: "Login",
+    match_fields: null,
+    print_fields: [1,2,3],
     conditions: [
-      { id: "condition1", field: 11, operator: ">", value: 456, type: "number" }
+      { id: "condition1", field: 4, operator: ">=", value: 20, type: "number" }
     ],
     logic: "condition1",
-    group_by: [9],
-    agg_func: "count",
+    group_by: null,
+    agg_func: null,
     agg_field: null,
-    sort_by: [9],
-    sort_order: "asc",
-    limit: 10
+    sort_by: [1],
+    sort_order: "desc",
+    limit: 5
   };
 
-  await queryModel(ir);
-  //const pythonResult = await runPython("./generator.py", test_ir);
-  //console.log(pythonResult);
-  //mode_gen_command=pythonResult.cmd;
+  //await queryModel(ir);
+  ir.file = "filename.log";
+  const pythonResult = await runPython("./generator.py", ir);
+  console.log(pythonResult);
+  mode_gen_command=pythonResult.cmd;
   // Step 2: Validate IR (Python)
   /*
     let validationErrors;
@@ -616,7 +618,7 @@ const test_ir = {
           });
         }
       }
-      await runWslCommand(command, res, ir);
+      await runWslCommand(command, res, test_ir);
     /*
     exec(`wsl bash -c "${escapedCommand}"`, async (error, stdout, stderr) => {
       if (error) {
