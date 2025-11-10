@@ -3,7 +3,7 @@
 
 ## ✅ Overview
 ShellSense is an advanced natural‑language–driven log analysis tool.  
-You upload a `.tsv` or `.txt` file, type your query in natural language, and ShellSense converts it into an IR → AWK/Sed command → executes it → returns results with LLM summarisation.
+You upload a `.tsv`, `.txt` or `.csv` file, type your query in natural language, and ShellSense converts it into an IR → AWK/Sed command → executes it → returns results with LLM summarisation.
 
 It supports:
 - ✅ File upload  
