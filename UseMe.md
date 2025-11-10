@@ -37,6 +37,7 @@ nodemon index.js
 You can upload:
 - `.tsv`
 - `.txt`
+- `.csv`
 
 More file types may be added later.
 
@@ -62,7 +63,7 @@ This is useful for chaining queries like:
 
 ⚠️ Since GPT‑4o-mini is used, the free quota is **100k tokens per Gmail account**.  
 After it's exhausted:
-- Create new Gmail  
+- Create new Gmail account
 - Go to https://platform.openai.com/api-keys  
 - Generate new API key  
 - Replace line 19 in `/backend/index.js`:
@@ -70,6 +71,12 @@ After it's exhausted:
 ```js
 const client = new OpenAI({ apiKey: "YOUR_NEW_API_KEY" });
 ```
+
+## ✅ Option 2: Add Balance to Existing Account (Recommended)
+
+- Add **$5** to your OpenAI wallet.
+- GPT-4o-mini then costs only **$0.15 per million tokens**.
+- This gives you extremely cheap usage without switching accounts.
 
 ---
 
