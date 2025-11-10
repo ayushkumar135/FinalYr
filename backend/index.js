@@ -16,7 +16,7 @@ const upload = multer({ dest: "uploads/" });
 app.use(cors());
 app.use(express.json());
 
-const client = new OpenAI({ apiKey: "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" });
+const client = new OpenAI({ apiKey: "" });
 
 function runPython(script, inputObj) {
   return new Promise((resolve, reject) => {
@@ -81,34 +81,7 @@ Here are 10 sample log lines:
 ${lines.join("\n")}
 `;
 }
-function buildFieldTypePrompt(lines){
-  return `
-    You are a file format detection expert.
 
-    Your task is to determine the file type ONLY from the sample lines provided below.
-
-    Possible file types:
-    - "csv"
-    - "tsv"
-    - "space"
-    - "pipe"
-    - "jsonl"
-    - "key_value"
-    - "unknown"
-
-    Return a JSON object with EXACTLY one key:
-    {
-      "filetype": "csv | tsv | space | pipe | jsonl | key_value | unknown"
-    }
-
-    Rules:
-    - Return ONLY valid JSON.
-    - No explanations, no extra text.
-
-    Here are the sample lines:
-    ${lines.join("\n")}
-  `
-}
 async function getFieldMapping(filePath) {
   const lines = sampleLogLines(filePath, 10);
   const prompt = buildFieldMappingPrompt(lines);
@@ -126,23 +99,7 @@ async function getFieldMapping(filePath) {
   console.log("Field Mapping JSON:\n", output);
   return output;
 }
-async function getfiletype(filePath) {
-  const lines = sampleLogLines(filePath, 10);
-  const prompt = buildFieldTypePrompt(lines);
 
-  console.log(" Sample lines sent to model:\n", lines.join("\n"));
-  console.log("\n Getting filetype from GPT-4o-mini...\n");
-
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    response_format: { type: "json_object" },
-  });
-
-  const output = completion.choices[0].message.content.trim();
-  console.log("Field Mapping JSON:\n", output);
-  return output;
-}
 app.post("/analyze", upload.single("file"), async (req, res) => {
   const { query,nested } = req.body;
   let filePath = path.resolve(req.file.path);
@@ -154,10 +111,6 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     console.log(nested);
     const fieldMapping = await getFieldMapping(filePath);
     console.log(fieldMapping);
-    const filetyperes=await getfiletype(filePath);
-    console.log(filetyperes);
-    const filetypeObj = JSON.parse(filetyperes);
-    const filetype = filetypeObj.filetype;
   try {
 
     const VALID_ACTIONS = [
@@ -489,29 +442,12 @@ const test_ir = {
       }
     ]
   };
+
   //await queryModel(ir);
   ir.file = "filename.log";
   const pythonResult = await runPython("./generator.py", ir);
   console.log(pythonResult);
   mode_gen_command=pythonResult.cmd;
-  function patchAwkForCSV(awkCommand) {
-      
-      let patched = awkCommand.replace(/FS=["'][^"']*["']/, 'FS=","')
-                              .replace(/OFS=["'][^"']*["']/, 'OFS=","');
-
-      
-      if (!/BEGIN\s*\{/.test(patched)) {
-        patched = patched.replace(
-          /awk\s*'/,
-          `awk 'BEGIN{FS=","; OFS=","}; `
-        );
-      }
-
-      return patched;
-    }
-    if (filetype === "csv") {
-      mode_gen_command = patchAwkForCSV(mode_gen_command);
-    }
 function splitPipeline(cmd) {
   const parts = [];
   let curr = "";
@@ -599,41 +535,11 @@ function buildNestedPipeline(fullCommand) {
   const awkProgram = mProg[1];
 
   const condition = extractConditionOnly(awkProgram);
-  
-      
-   
-
-    console.log("filetype:", filetype);
-
-    const isCSV = (filetype === "csv");
-    console.log("checking filetype is csv");
-    console.log(isCSV);
 
   
-  let mBegin = awkProgram.match(/BEGIN\s*\{[^}]*\}/);
-
-  let beginBlock;
-
-  if (mBegin) {
-    beginBlock = mBegin[0];
-
-    if (isCSV) {
-      
-      beginBlock = beginBlock.replace(/FS\s*=\s*["'][^"']+["']/, 'FS=","');
-      beginBlock = beginBlock.replace(/OFS\s*=\s*["'][^"']+["']/, 'OFS=","');
-    }
-  } else {
-    beginBlock = isCSV
-      ? 'BEGIN{FS=","; OFS=","}'
-      : 'BEGIN{FS="[[:space:]]+"; OFS=" "}';
-  }
-  
-  
-  /*
   const mBegin = awkProgram.match(/BEGIN\s*\{[^}]*\}/);
-  
   const beginBlock = mBegin ? mBegin[0] : 'BEGIN{FS="[[:space:]]+"; OFS=" "}';
-  */
+
 
   const nestedAwk = `awk '${beginBlock}; ${condition} { print $0 }' ${filename}`;
 
