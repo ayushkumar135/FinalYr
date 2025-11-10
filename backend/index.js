@@ -18,10 +18,9 @@ app.use(express.json());
 
 const client = new OpenAI({ apiKey: "" });
 
-// helper: run python script and parse JSON
 function runPython(script, inputObj) {
   return new Promise((resolve, reject) => {
-    console.log("i allo");
+    //console.log("i allo");
     const py = spawn("python", [script], { stdio: ["pipe", "pipe", "pipe"] });
     //console.log(py)
     let out = "";
@@ -59,7 +58,6 @@ function sampleLogLines(filePath, n = 10) {
   return sampled;
 }
 
-// ---- STEP 2: build prompt for GPT ----
 function buildFieldMappingPrompt(lines) {
   return `
 You are a log analysis expert. Your task is to infer what each space-separated field in a log line represents.
@@ -84,13 +82,12 @@ ${lines.join("\n")}
 `;
 }
 
-// ---- STEP 3: call GPT-4o-mini ----
 async function getFieldMapping(filePath) {
   const lines = sampleLogLines(filePath, 10);
   const prompt = buildFieldMappingPrompt(lines);
 
-  console.log("🧾 Sample lines sent to model:\n", lines.join("\n"));
-  console.log("\n⏳ Getting field mapping from GPT-4o-mini...\n");
+  console.log(" Sample lines sent to model:\n", lines.join("\n"));
+  console.log("\n Getting field mapping from GPT-4o-mini...\n");
 
   const completion = await client.chat.completions.create({
     model: "gpt-4o-mini",
@@ -99,19 +96,23 @@ async function getFieldMapping(filePath) {
   });
 
   const output = completion.choices[0].message.content.trim();
-  console.log("✅ Field Mapping JSON:\n", output);
+  console.log("Field Mapping JSON:\n", output);
   return output;
 }
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
-  const { query } = req.body;
-  const filePath = path.resolve(req.file.path);
-    console.log("ok");
+  const { query,nested } = req.body;
+  let filePath = path.resolve(req.file.path);
+    //console.log("ok");
+    if(nested==="true"){
+      filePath = "./nested_output.log";
+    }
     console.log(filePath);
+    console.log(nested);
     const fieldMapping = await getFieldMapping(filePath);
     console.log(fieldMapping);
   try {
-    // Step 1: Ask OpenAI to generate IR
+
     const VALID_ACTIONS = [
       "list", "count", "top", "distinct", "unique", "unique_count",
       "group_count", "aggregate", "time_series", "rate",
@@ -147,7 +148,22 @@ Convert any English instruction related to log analysis, filtering, searching, c
   "agg_field": "<field number on which the aggregation function is applied, or null>",
   "sort_by": [<field numbers to sort by or null>],
   "sort_order": "<asc | desc | null>",
-  "limit": "<number limit or null>"
+  "limit": "<number limit or null>",
+  "transformations": [
+    {
+      "type": "<replace | substitute | extract_substring | trim | lowercase | uppercase | remove_duplicates>",
+      "field": "<field number>",
+      "pattern": "<regex or text>",
+      "replacement": "<text or null>"
+    }
+  ],
+  "line_mutations": [
+    {
+      "type": "<sed_substitute | delete_lines | prefix | suffix | collapse_spaces>",
+      "pattern": "<regex>",
+      "replacement": "<string or null>"
+    }
+  ]
 }
 
 Guidelines:
@@ -209,7 +225,94 @@ Guidelines:
     Whenever a condition compares **time values** (e.g., "2am", "03:00", "14:30"),  
     use \`">="\` instead of \`">"\`, and \`"<="\` instead of \`"<"\` to ensure inclusive time boundaries.
 
-12. **Example output:**
+12. **Field-Level Transformations (the "transformations" array)**  
+These operations modify the value of a **specific field only**, not the entire line.  
+They must be used when the user's natural language refers to modifying, cleaning, or transforming a particular column/field.
+
+Rules for transformations:
+- Use **"lowercase"** when the user says things like:
+  “make field X lowercase”, “convert to lowercase”, “small letters”.
+  → replacement must be null.
+
+- Use **"uppercase"** for:
+  “make caps”, “convert to uppercase”.
+  → replacement must be null.
+
+- Use **"trim"** for:
+  “cut down spaces”, “remove extra spaces”, “clean whitespace”, “trim”.
+  → replacement must be null.
+
+- Use **"replace"** or **"substitute"** when the user wants to replace text **inside one field only**.
+  Example: “Replace abc with xyz in field 5”
+  → field: 5, pattern: "abc", replacement: "xyz"
+
+- Use **"extract_substring"** when user asks:
+  “extract only the domain”, “take the substring before ?”, “extract the part after /api”
+  → pattern should capture the part needed.
+
+- Use **"remove_duplicates"** when the field contains multiple comma-separated values and the user wants to remove repeated entries.
+
+Required keys:
+- "field": field number to modify  
+- "pattern": regex or text (if needed)  
+- "replacement": null for lowercase/uppercase/trim/remove_duplicates; actual string for replace/substitute  
+
+Do NOT use transformations for full-line operations.
+
+--------------------------------------------------------------
+
+13. **Line-Level Mutations (the "line_mutations" array)**  
+These are performed on the **entire line BEFORE awk**, using sed-like operations.  
+They must be used when the natural language indicates full line modifications.
+
+Rules:
+
+- **"sed_substitute"**  
+  Use this when the user says:
+  “replace ERROR with WARN everywhere”,  
+  “substitute 404 with NOT_FOUND in the whole row”
+  → Applies substitution to the entire line (not a specific field).
+
+- **"delete_lines"**  
+  When the user says:
+  “remove rows with 404”,  
+  “delete all lines containing failed login”,  
+  “drop entries where method=POST”
+  → Entire line is removed if pattern matches.  
+  replacement must be null.
+
+- **"prefix"**  
+  Adds text at the **START** of each line.  
+  When the user says:
+  “add START: at the beginning”,  
+  “prefix each line with LOG:”
+  → replacement contains the prefix string.
+
+- **"suffix"**  
+  Adds text at the **END** of each line.  
+  Example:
+  “append END”,  
+  “add ; at the end of each row”
+  → replacement contains the suffix string.
+
+- **"collapse_spaces"**  
+  When user says:
+  “normalize spaces”, “remove multiple spaces”, “make spacing uniform”
+  → replacement must be null.
+
+Required keys:
+- "pattern": required for sed_substitute and delete_lines  
+- "pattern": null for prefix/suffix/collapse_spaces  
+- "replacement":  
+     - prefix/suffix → the text to add  
+     - sed_substitute → replacement text  
+     - delete_lines/collapse_spaces → null
+
+Transformation vs Line Mutation (MUST FOLLOW):
+- If user wants to modify **one field** → use transformations  
+- If user wants to modify **entire row/line** → use line_mutations 
+
+14. **Example output:**
 
 Input:
 > Show me how many times error 404 occurred per user ID in filename.log, sorted ascending.
@@ -228,23 +331,49 @@ Output:
   "agg_field": null,
   "sort_by": [9],
   "sort_order": "asc",
-  "limit": null
+  "limit": null,
+  "transformations": [
+    {
+      "type": "lowercase",
+      "field": 1,
+      "pattern": null,
+      "replacement": null
+    },
+    {
+      "type": "replace",
+      "field": 9,
+      "pattern": "ERROR",
+      "replacement": "ERR"
+    }
+  ],
+  "line_mutations": [
+    {
+      "type": "collapse_spaces",
+      "pattern": null,
+      "replacement": null
+    },
+    {
+      "type": "sed_substitute",
+      "pattern": "404",
+      "replacement": "NOTFOUND"
+    }
+  ]
 }
 
-13. Return **only the JSON object**, no extra explanation.
+15. Return **only the JSON object**, no extra explanation.
 
----
+--- 
 
 User query: ${query}
 `;
 
-      console.log("here reaching");
+      //console.log("here reaching");
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
-    console.log("Herere");
+    //console.log("Herere");
     const ir = JSON.parse(completion.choices[0].message.content);
     console.log(ir);
 
@@ -255,40 +384,6 @@ User query: ${query}
     const HF_TOKEN = "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"; // optional if model is public
     const client = await Client.connect("AyushKumar3456/finalyrv4");
     // salesforcescodet5small-improvedv2  ir-to-command-advance Finalyrv3
-    /*const initResponse = await fetch("https://ayushkumar3456-finalyr.hf.space/gradio_api/call/predict", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        data: [JSON.stringify(inputJSON)]
-      }),
-    });
-
-    const initResult = await initResponse.json();
-    const eventId = initResult.event_id;
-    console.log("🆔 Event ID:", eventId);
-
-    if (!eventId) {
-      console.error("❌ No event_id returned — something went wrong.");
-      console.log(initResult);
-      return;
-    }
-
-    // 2️⃣ Step 2: Poll for result
-    const resultResponse = await fetch(`https://ayushkumar3456-finalyr.hf.space/gradio_api/call/predict/${eventId}`);
-    const resultData = await resultResponse.json();
-
-    console.log("🧾 Full Result:", resultData);
-
-    // 3️⃣ Extract generated command
-    if (resultData?.data && resultData.data.length > 0) {
-      console.log("\n✅ Generated Command:");
-      console.log(resultData.data[0]);
-      return resultData.data[0];
-    } else {
-      console.warn("\n⚠️ Unexpected response format:", resultData);
-      return null;
-    }
-      */
      if ('action' in inputJSON) {
         delete inputJSON.action; 
       }
@@ -311,19 +406,41 @@ User query: ${query}
 const test_ir = {
     action: "aggregate",
     file: "filename.log",
-    match_pattern: "Login",
+    match_pattern: null,
     match_fields: null,
-    print_fields: [1,2,3],
+    print_fields: null,
     conditions: [
-      { id: "condition1", field: 4, operator: ">=", value: 20, type: "number" }
+      { id: "condition1", field: 4, operator: ">=", value: 20, type: "number" },
+      { id: "condition2", field: 4, operator: "<=", value: 20000, type: "number" }
     ],
-    logic: "condition1",
+    logic: "condition1 AND condition2",
     group_by: null,
     agg_func: null,
     agg_field: null,
-    sort_by: [1],
-    sort_order: "desc",
-    limit: 5
+    sort_by: null,
+    sort_order: null,
+    limit: null,
+    transformations: [
+      {
+        "type": "lowercase",
+        "field": 3,
+        "pattern": null,
+        "replacement": null
+      },
+      {
+        "type": "substitute",
+        "field": 5,
+        "pattern": "L2",
+        "replacement": "ERR"
+      }
+    ],
+    line_mutations: [
+      {
+        "type": "sed_substitute",
+        "pattern": "Login",
+        "replacement": "L2"
+      }
+    ]
   };
 
   //await queryModel(ir);
@@ -331,6 +448,116 @@ const test_ir = {
   const pythonResult = await runPython("./generator.py", ir);
   console.log(pythonResult);
   mode_gen_command=pythonResult.cmd;
+function splitPipeline(cmd) {
+  const parts = [];
+  let curr = "";
+  let inSingle = false;
+  let inDouble = false;
+
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+
+    if (c === "'" && !inDouble) {
+      inSingle = !inSingle;
+      curr += c;
+      continue;
+    }
+
+    if (c === '"' && !inSingle) {
+      inDouble = !inDouble;
+      curr += c;
+      continue;
+    }
+
+    if (c === "|" && !inSingle && !inDouble) {
+      parts.push(curr.trim());
+      curr = "";
+    } else {
+      curr += c;
+    }
+  }
+
+  if (curr.trim()) parts.push(curr.trim());
+  return parts;
+}
+
+
+
+function extractConditionOnly(awkScript) {
+  
+  let cleaned = awkScript.replace(/BEGIN\s*\{[\s\S]*?\}\s*;?/m, "").trim();
+
+  const bracePos = cleaned.indexOf("{");
+  if (bracePos === -1) return "1"; 
+
+  let beforeBrace = cleaned.slice(0, bracePos).trim();
+
+  const lastSemi = beforeBrace.lastIndexOf(";");
+  if (lastSemi !== -1) beforeBrace = beforeBrace.slice(lastSemi + 1).trim();
+
+  return beforeBrace.length ? beforeBrace : "1";
+}
+
+
+function buildNestedPipeline(fullCommand) {
+  const parts = splitPipeline(fullCommand);
+
+  const sedParts = [];
+  let awkPart = "";
+  const sortParts = [];
+  let limitPart = "";
+  let filename = "";
+
+  for (let p of parts) {
+    if (p.startsWith("sed")) {
+      sedParts.push(p);
+    }
+    else if (p.startsWith("awk")) {
+      awkPart = p;
+
+      const m = p.match(/'[^']*'\s+(\S+)$/);
+      if (m) filename = m[1];
+    }
+    else if (p.startsWith("sort")) {
+      sortParts.push(p);
+    }
+    else if (p.startsWith("head")) {
+      limitPart = p;
+    }
+  }
+
+  
+  if (!awkPart) return null;
+
+  
+  const mProg = awkPart.match(/'([^']+)'/);
+  if (!mProg) return null;
+  const awkProgram = mProg[1];
+
+  const condition = extractConditionOnly(awkProgram);
+
+  
+  const mBegin = awkProgram.match(/BEGIN\s*\{[^}]*\}/);
+  const beginBlock = mBegin ? mBegin[0] : 'BEGIN{FS="[[:space:]]+"; OFS=" "}';
+
+
+  const nestedAwk = `awk '${beginBlock}; ${condition} { print $0 }' ${filename}`;
+
+  const nestedPipeline = [
+    ...sedParts,
+    nestedAwk,
+    ...sortParts,
+    limitPart
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+  return nestedPipeline;
+}
+
+  let nestedcommand=buildNestedPipeline(mode_gen_command);
+  console.log(nestedcommand);
+  console.log("please check above line for nested command saved in nested.log");
   // Step 2: Validate IR (Python)
   /*
     let validationErrors;
@@ -366,8 +593,8 @@ const test_ir = {
       */
     // Step 4: Run command
     
-   console.log("I am herreeee got till step 3")
-   
+   //console.log("I am herreeee got till step 3")
+
     function convertWindowsPathsToWsl(command) {
       return command.replace(/[A-Za-z]:\\[^\s|]*/g, (match) => {
         let wslPath = "/mnt/" + match[0].toLowerCase() + match.slice(2).replace(/\\/g, "/");
@@ -375,11 +602,54 @@ const test_ir = {
       });
     }
     let command = mode_gen_command.replace(/\bfilename\.log\b/g, filePath);
+    let command2 = nestedcommand.replace(/\bfilename\.log\b/g, filePath);
     console.log(command);
     command = convertWindowsPathsToWsl(command);
+    command2 = convertWindowsPathsToWsl(command2);
     console.log(command);
+    console.log(command2);
     //command = `awk '{ if ((($2+0 > 200)) && (($2+0 < 300))) {key=$3; count[key]++} } END {for (k in count) {split(k,a,SUBSEP); print a[1], count[k]}}' '/mnt/c/Users/ayush/Desktop/finalyr/backend/uploads/3023b04e25131374848b44a1a9602e0b'`;
     const escapedCommand = command.replace(/"/g, '\\"').replace(/\$/g, '\\$');
+    function runNestedAndStore(nestedCommand, nestedFilePath = "./nested_output.log") {
+  return new Promise((resolve, reject) => {
+
+    const bash = spawn("wsl", ["bash", "-i"], {
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    let stdoutData = "";
+    let stderrData = "";
+
+    bash.stdout.on("data", (d) => (stdoutData += d.toString()));
+    bash.stderr.on("data", (d) => (stderrData += d.toString()));
+
+    bash.on("close", (code) => {
+      if (code !== 0) {
+        console.log(stderrData);
+        return reject({
+          error: "Nested command failed",
+          details: stderrData.trim(),
+          cmd: nestedCommand
+        });
+      }
+
+      const cleaned = stdoutData.replace(/\r\n/g, "\n");
+
+      fs.writeFileSync(nestedFilePath, cleaned, "utf-8");
+
+      resolve({
+        ok: true,
+        nested_file: nestedFilePath,
+        lines_stored: cleaned.split("\n").filter(l => l.trim().length).length,
+        preview: cleaned.slice(0, 300)
+      });
+    });
+
+    bash.stdin.write(nestedCommand + "\n");
+    bash.stdin.end();
+  });
+}
+
     async function runWslCommand(command, res, ir) {
         try {
           const bash = spawn("wsl", ["bash", "-i"], {
@@ -389,7 +659,6 @@ const test_ir = {
           let stdoutData = "";
           let stderrData = "";
 
-          // Capture output
           bash.stdout.on("data", (data) => {
             stdoutData += data.toString();
           });
@@ -400,7 +669,7 @@ const test_ir = {
           
           bash.on("close", (code) => {
             if (code !== 0) {
-              console.log("here1234");
+              //console.log("here1234");
               console.log(stderrData.trim());
               return res.json({
                 error: "Command execution failed",
@@ -582,17 +851,17 @@ const test_ir = {
                       });
 
                       const summary = await response.choices[0].message.content.trim();
-                      console.log("✅ LLM Summary:\n", summary);
+                      console.log(" LLM Summary:\n", summary);
                       return summary;
                     } catch (error) {
-                      console.error("❌ Error generating summary:", error);
+                      console.error(" Error generating summary:", error);
                       return null;
                     }
               }
             let determinsitic=explainCommand(command);
             summarizeCommandResult(query, command, stdoutData.trim())
               .then(summary => {
-                console.log("✅ Outside Function Summary:\n", summary);
+                console.log(" Outside Function Summary:\n", summary);
                 res.json({
                   ir,
                   command,
@@ -607,7 +876,6 @@ const test_ir = {
               });
           });
           
-          // Write the full command directly into bash (no escaping needed)
           bash.stdin.write(`${command}\n`);
           bash.stdin.end();
 
@@ -618,117 +886,9 @@ const test_ir = {
           });
         }
       }
-      await runWslCommand(command, res, test_ir);
-    /*
-    exec(`wsl bash -c "${escapedCommand}"`, async (error, stdout, stderr) => {
-      if (error) {
-        
-        return res.json({
-          error: "Command execution failed",
-          command,
-          details: stderr || error.message,
-        });
-      }
-
-      try {
-        console.log("here");
-        // (i) Deterministic Parser
-        function deterministicParser(cmd, output) {
-          const stages = cmd.split("|").map((s) => s.trim());
-          const parsed = [];
-
-          let technicalSummary = "Pipeline breakdown:\n";
-          let finalExplanation = "";
-
-          for (const st of stages) {
-            if (st.startsWith("awk")) {
-              const m = st.match(/\{print\s+([^}]+)\}/);
-              parsed.push({ type: "awk", expr: m ? m[1] : "$0 (whole line)" });
-              technicalSummary += `- AWK used to extract fields: ${m ? m[1] : "entire line"}\n`;
-            } else if (st.startsWith("grep")) {
-              const m = st.match(/grep\s+-E\s+-i\s+'([^']+)'/);
-              const pattern = m ? m[1] : "unspecified";
-              parsed.push({ type: "grep", pattern });
-              technicalSummary += `- GREP filters lines matching pattern: "${pattern}" (case-insensitive)\n`;
-              finalExplanation += `Count of log lines matching "${pattern}" `;
-            } else if (st.includes("uniq")) {
-              parsed.push({ type: "uniq", count: st.includes("-c") });
-              technicalSummary += `- UNIQ ${st.includes("-c") ? "with counts" : "unique only"}\n`;
-            } else if (st.startsWith("sort")) {
-              parsed.push({ type: "sort", order: st.includes("-n") ? "numeric" : "lexical" });
-              technicalSummary += `- SORT results (${st.includes("-n") ? "numeric" : "lexical"} order)\n`;
-            } else if (st.startsWith("head")) {
-              const m = st.match(/-n\s+(\d+)/);
-              const lines = m ? parseInt(m[1]) : 10;
-              parsed.push({ type: "head", lines });
-              technicalSummary += `- HEAD limits output to first ${lines} lines\n`;
-            } else if (st.startsWith("wc")) {
-              parsed.push({ type: "wc", mode: st.includes("-l") ? "line_count" : "other" });
-              technicalSummary += `- WC counts ${st.includes("-l") ? "lines" : "other"}\n`;
-              finalExplanation += `in ${extractLogFile(cmd)} is ${output.trim()}.`;
-            } else {
-              parsed.push({ type: "other", raw: st });
-              technicalSummary += `- OTHER stage: ${st}\n`;
-            }
-          }
-
-          technicalSummary += "\nRaw output (truncated):\n" + output.slice(0, 500);
-
-          return {
-            stages: parsed,
-            technical_summary: technicalSummary,
-            deterministic_explanation: finalExplanation || "No high-level explanation generated."
-          };
-        }
-
-        //const parsed = deterministicParser(command, stdout);
-
-        // (ii) LLM Summarization
-        let llmSummary = "No OpenAI API key provided.";
-        if (1) {
-          const completion2 = await client.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `You are a log analysis assistant. 
-                          Summarize technical results into clear, human-friendly insights.
-                          Be specific, concise, and results-oriented.
-                          If counts are involved, state how many.
-                          If unique/distinct values are requested, mention how many and list them (if few).
-                          If filtering patterns are used, state what was matched.`
-              },
-              {
-                role: "user",
-                content: `Deterministic Explanation: ${parsed.deterministic_explanation}
-                Technical Summary: ${parsed.technical_summary}
-
-                Now summarize in 2-3 sentences, highlighting:
-                1. What was being asked (pattern, distinct, count, etc.)
-                2. The actual result (counts, unique values, etc.)
-                3. Present it in plain English.`
-              },
-            ],
-          });
-          //llmSummary = completion2.choices[0].message.content.trim();
-          //console.log(llmSummary)
-        }
-
-        res.json({
-          ir,
-          command,
-          raw_output: stdout
-        });
-      } catch (parseErr) {
-        res.json({
-          error: "Parsing failed",
-          command,
-          details: parseErr.message,
-          raw_output: stdout,
-        });
-      }
-    });
-    */
+      let nestedsaved=await runNestedAndStore(command2);
+      console.log(nestedsaved);
+      await runWslCommand(command, res, ir);
   } catch (err) {
     res.status(500).json({ error: "Fatal server error", details: err.message });
   }

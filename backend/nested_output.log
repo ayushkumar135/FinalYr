@@ -1,0 +1,8 @@
+200	192.168.1.25	TCP_MISS/200	5120	L2	http://example.com/index.html	-	DIRECT/93.184.216.34	02:01:01
+350	192.168.1.40	TCP_MISS/401	6200	L2	http://news.com/article1	-	DIRECT/151.101.1.69	02:30:01
+180	192.168.1.25	TCP_HIT/200	2048	L2	http://cdn.example.com/logo.png	-	NONE/-	03:15:01
+920	192.168.1.30	TCP_MISS/200	20480	L2	http://videos.com/clip.mp4	-	DIRECT/203.0.113.10	05:15:01
+130	192.168.1.40	TCP_DENIED/403	403	L2	http://timeout.com	-	NONE/-	12:15:01
+260	192.168.1.25	TCP_MISS/301	520	L2	http://example.com/old	-	DIRECT/93.184.216.34	13:15:01
+170	192.168.1.30	TCP_HIT/200	6200	L2	http://news.com/article1	-	NONE/-	20:15:01
+300	192.168.1.40	TCP_MISS/500	800	L2	http://example.com/error	-	DIRECT/93.184.216.34	22:04:04

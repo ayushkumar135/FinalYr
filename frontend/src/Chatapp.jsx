@@ -8,6 +8,7 @@ export default function ChatApp() {
   ]);
   const [input, setInput] = useState("");
   const [file, setFile] = useState(null);
+  const [nestedMode, setNestedMode] = useState(false);
 
   const messagesEndRef = useRef(null);
 
@@ -30,6 +31,8 @@ export default function ChatApp() {
       const formData = new FormData();
       formData.append("query", input.trim());
       formData.append("file", file);
+      formData.append("nested", nestedMode ? "true" : "false");
+
 
       const res = await fetch("http://localhost:5000/analyze", {
         method: "POST",
@@ -80,7 +83,12 @@ export default function ChatApp() {
           accept=".txt"
           onChange={(e) => setFile(e.target.files[0])}
         />
-
+         <button
+          className="nested-toggle"
+          onClick={() => setNestedMode((prev) => !prev)}
+        >
+          {nestedMode ? "Nested Mode ✅" : "Nested Mode OFF"}
+        </button>
         {/* Text input */}
         <input
           type="text"
